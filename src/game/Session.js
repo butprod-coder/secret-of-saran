@@ -17,6 +17,11 @@ export function inFront(hero, list) {
   return list.find((s) => Math.hypot(s.x - fx, s.y - fy) < 13) ?? null;
 }
 
+// Coffres pas encore ouverts et leviers pas encore actionnés : la même commande « open ».
+export function usableInFront(hero, map, flags) {
+  return inFront(hero, [...map.chests, ...map.levers].filter((c) => !flags[c.key]));
+}
+
 let playerSeq = 0;
 
 export class Session {
@@ -226,5 +231,5 @@ export class Session {
   }
 
   signInFront(hero) { return inFront(hero, this.map.signs); }
-  chestInFront(hero) { return inFront(hero, this.map.chests.filter((c) => !this.world.s.flags[c.key])); }
+  chestInFront(hero) { return usableInFront(hero, this.map, this.world.s.flags); }
 }

@@ -23,7 +23,7 @@ export const HEROES = {
     growth: { hp: 7, mp: 5, str: 1, def: 1, mag: 3 },
     speed: 1.15,
     weapon: 'baton',
-    spells: ['feu', 'gel'],
+    spells: ['feu', 'gel', 'seisme'],
     chargeRate: 0.8,
     chargeBonus: 0,
     tactic: 'defensif',

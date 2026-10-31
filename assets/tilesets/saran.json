@@ -2,7 +2,7 @@
   "name": "saran",
   "tile": 16,
   "columns": 16,
-  "rows": 8,
+  "rows": 11,
   "groups": [
     { "name": "grass", "start": 0, "count": 3 },
     { "name": "flowers", "start": 3, "count": 2 },
@@ -18,6 +18,16 @@
     { "name": "path", "start": 32, "count": 16 },
     { "name": "tree", "start": 48, "count": 4, "solidFrom": 2 },
     { "name": "house", "start": 64, "count": 20, "solidFrom": 5 },
-    { "name": "bakery", "start": 84, "count": 20, "solidFrom": 5 }
+    { "name": "bakery", "start": 84, "count": 20, "solidFrom": 5 },
+    { "name": "cave", "start": 104, "count": 3 },
+    { "name": "cavewall", "start": 107, "count": 2, "solid": true },
+    { "name": "ladder", "start": 109, "count": 1 },
+    { "name": "hole", "start": 110, "count": 1 },
+    { "name": "gate", "start": 111, "count": 2 },
+    { "name": "ronces", "start": 113, "count": 2 },
+    { "name": "lever", "start": 115, "count": 2, "solid": true },
+    { "name": "roots", "start": 117, "count": 1, "solid": true },
+    { "name": "shroom", "start": 118, "count": 1, "solid": true },
+    { "name": "oak", "start": 128, "count": 36, "solidFrom": 24 }
   ]
 }

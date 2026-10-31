@@ -89,6 +89,23 @@ function fxFrames() {
     for (const [x, y, r] of [[10, 12, 6], [18, 9, 7], [26, 12, 6], [14, 16, 5], [23, 16, 5]]) ellipse(g, x, y, r, r * 0.8, C.purpleL, C.purple);
     for (const [x, y] of [[6, 6], [30, 5], [18, 2]]) dot(g, x, y, C.purpleL);
   }));
+  add('caillou', canvasOf(8, 7, (g) => { ellipse(g, 4, 3.5, 3.5, 3, C.stone, C.stoneS, C.stoneL); dot(g, 5, 4, C.stoneS); }));
+  // Onde de choc : anneau de terre et de cailloux (atterrissage, éruption, Séisme).
+  for (const [name, size, r0, r1] of [['quake', 48, 16, 23], ['seisme', 48, 18, 23]]) {
+    add(name, canvasOf(size, size, (g) => {
+      const m = size / 2;
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const dx = (x + 0.5 - m) / 1;
+        const dy = (y + 0.5 - m) * 2; // vue de dessus écrasée
+        const r = Math.hypot(dx, dy);
+        if (r >= r0 && r <= r1) dot(g, x, y, r > (r0 + r1) / 2 ? C.dirtS : name === 'seisme' ? C.goldL : C.dirtL);
+      }
+      for (const [x, y] of [[8, 20], [40, 22], [24, 14], [14, 30], [34, 31]]) dot(g, x, y, C.stoneL);
+    }, false));
+  }
+  add('slam', canvasOf(24, 12, (g) => {
+    for (const [x, y, r] of [[6, 7, 4], [12, 5, 5], [18, 7, 4]]) ellipse(g, x, y, r, r * 0.7, C.dirtL, C.dirtS);
+  }));
   add('arrow', canvasOf(13, 5, (g) => {
     rect(g, 1, 2, 9, 1, C.woodL); rect(g, 10, 1, 2, 3, C.steel); dot(g, 12, 2, C.steelL);
     dot(g, 1, 1, C.red); dot(g, 2, 1, C.red); dot(g, 1, 3, C.red); dot(g, 2, 3, C.red);
@@ -141,6 +158,11 @@ const ICONS = {
     }
     rect(g, 7, 3, 2, 10, C.green); rect(g, 4, 6, 8, 2, C.green);
   },
+  seisme(g) {
+    rect(g, 1, 11, 14, 3, C.dirtS); rect(g, 1, 11, 14, 1, C.dirt);
+    line(g, 4, 11, 7, 7, C.brownS); line(g, 7, 7, 6, 4, C.brownS); line(g, 10, 11, 11, 6, C.brownS);
+    for (const [x, y] of [[3, 4], [12, 3], [8, 2]]) { rect(g, x, y, 2, 2, C.stone); dot(g, x, y, C.stoneL); }
+  },
   tac_agressif(g) {
     line(g, 3, 13, 12, 4, C.steelL); line(g, 4, 13, 13, 4, C.steel); dot(g, 13, 3, C.white);
     line(g, 2, 10, 6, 14, C.gold); rect(g, 1, 14, 2, 2, C.brown);
@@ -177,6 +199,13 @@ const ICONS = {
     ellipse(g, 8, 9, 6.5, 5.5, C.red, C.redS, C.redL);
     rect(g, 1, 11, 14, 2, C.gold); rect(g, 1, 12, 14, 1, C.goldS);
     rect(g, 7, 3, 2, 8, C.gold); dot(g, 5, 6, C.white);
+  },
+  bonnet(g) {
+    for (let k = 0; k < 12; k++) {
+      const half = Math.round(6 - k * 0.48);
+      rect(g, 7 - half - Math.round(k * 0.2), 13 - k, half * 2 + 1, 1, k > 8 ? C.redL : C.red);
+    }
+    rect(g, 1, 13, 13, 2, C.white); dot(g, 3, 14, C.creamS);
   },
   tshirt(g) {
     rect(g, 4, 4, 8, 10, C.white); rect(g, 1, 4, 3, 4, C.white); rect(g, 12, 4, 3, 4, C.white);

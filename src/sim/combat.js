@@ -35,7 +35,8 @@ export function applyDamage(w, target, amount, { kind = 'phys', crit = false, fr
   if (target.dead || target.state === 'ko' || target.invul > 0) return false;
   target.hp = Math.max(0, target.hp - amount);
   w.emit({ type: 'dmg', id: target.id, amount, kind, crit, x: target.x, y: target.y });
-  if (from) {
+  const heavy = target.type === 'enemy' && ENEMIES[target.kind].heavy;
+  if (from && !heavy) {
     const dx = target.x - from.x;
     const dy = target.y - from.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -49,6 +50,7 @@ export function applyDamage(w, target, amount, { kind = 'phys', crit = false, fr
   } else {
     target.invul = 8;
     if (target.hp === 0) w.killEnemy(target);
+    else if (heavy) target.flash = 5; // un boss encaisse sans broncher
     else { target.state = 'hurt'; target.t = 0; target.z = 0; }
   }
   return true;

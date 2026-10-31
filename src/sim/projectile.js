@@ -1,4 +1,4 @@
-// Flèches et boules de feu. Elles passent au-dessus de l'eau mais pas des murs.
+// Flèches, boules de feu et cailloux de Gnomard. Ils passent au-dessus de l'eau mais pas des murs.
 import { SPELLS } from './data/spells.js';
 import { applyDamage, gainWeaponXp, magical, physical } from './combat.js';
 
@@ -26,7 +26,10 @@ export function updateProjectile(w, p) {
   for (const t of targets) {
     if (Math.hypot(t.x - p.x, t.y - p.y) >= t.r + 5) continue;
     const owner = w.get(p.owner);
-    if (p.kind === 'arrow') {
+    if (p.kind === 'caillou') {
+      const { amount, crit } = physical(w, p.atk, t, p.mult);
+      applyDamage(w, t, amount, { crit, from: p, kb: 1.6 });
+    } else if (p.kind === 'arrow') {
       const { amount, crit } = physical(w, p.atk, t, p.mult);
       if (applyDamage(w, t, amount, { crit, from: p, kb: 1.6 }) && owner) gainWeaponXp(w, owner);
     } else if (p.kind === 'feu') {

@@ -7,7 +7,7 @@ export const TICK_HZ = 60;
 export const STEP_MS = 1000 / TICK_HZ;
 export const DAY_TICKS = TICK_HZ * 60 * 8; // une journée dure 8 minutes réelles
 
-export const VERSION = '0.3.0-jalon-5';
+export const VERSION = '0.4.0-jalon-6';
 
 // Cartes chargées au démarrage (assets/maps/<id>.tmj).
-export const MAPS = ['prairie', 'clairiere'];
+export const MAPS = ['prairie', 'clairiere', 'galeries', 'chene'];

@@ -22,6 +22,9 @@ export const C = {
   cream: '#f6ead0', creamS: '#d6c49e',
   glass: '#8cc8f0', green: '#48a048', greenL: '#a0e870', greenS: '#2c6c34',
   ice: '#bfe8ff', iceS: '#6aa8e0',
+  cave: '#5a4644', caveS: '#463434', caveL: '#725a52', caveD: '#2a1e24',
+  rock: '#6e6260', rockS: '#4e4446', rockL: '#948480',
+  glow: '#7ef0e0', glowS: '#3aa8b0',
 };
 
 export const hex = (c) => parseInt(c.slice(1), 16);

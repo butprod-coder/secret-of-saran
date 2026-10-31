@@ -1,20 +1,22 @@
 // Sorts et objets.
 import { HEROES } from './data/heroes.js';
-import { SPELLS } from './data/spells.js';
+import { SPELLS, spellKnown } from './data/spells.js';
 import { ITEMS } from './data/items.js';
+import { ENEMIES } from './data/enemies.js';
 import { applyDamage, heal, magical } from './combat.js';
 
 const CAST_APPLY = 22;
 const CAST_LEN = 34;
 
-export function canCast(e, spellId) {
+export function canCast(w, e, spellId) {
   const sp = SPELLS[spellId];
-  return !!sp && !!e && e.type === 'hero' && e.state !== 'ko' && HEROES[e.hero].spells.includes(spellId) && e.mp >= sp.mp;
+  return !!sp && !!e && e.type === 'hero' && e.state !== 'ko' && HEROES[e.hero].spells.includes(spellId)
+    && spellKnown(w.s.flags, spellId) && e.mp >= sp.mp;
 }
 
 // Si le lanceur est occupé (coup, recul), le sort part dès qu'il est libre.
 export function startCast(w, e, spellId, targetId) {
-  if (!canCast(e, spellId)) return false;
+  if (!canCast(w, e, spellId)) return false;
   if (e.state !== 'idle' && e.state !== 'walk') { e.queued = { spell: spellId, target: targetId }; return true; }
   e.mp -= SPELLS[spellId].mp;
   e.cast = { spell: spellId, target: targetId };
@@ -34,9 +36,9 @@ export function stepCast(w, e) {
 function applySpell(w, e, sp, targetId) {
   let tgt = w.get(targetId);
   if (sp.target === 'foe') {
-    if (!tgt || tgt.dead) tgt = w.nearestFoe(e, 200);
+    if (!tgt || tgt.dead || tgt.hidden) tgt = w.nearestFoe(e, 200);
     if (!tgt) return;
-  } else if (!tgt || tgt.state === 'ko') {
+  } else if (sp.target === 'self' || !tgt || tgt.state === 'ko') {
     tgt = e;
   }
   switch (sp.kind) {
@@ -56,7 +58,14 @@ function applySpell(w, e, sp, targetId) {
       for (const f of w.foes()) {
         if (Math.hypot(f.x - tgt.x, f.y - tgt.y) >= sp.radius) continue;
         applyDamage(w, f, magical(w, e, sp.power, f), { kind: 'magic', from: { x: tgt.x, y: tgt.y - 1 }, kb: 1 });
-        if (!f.dead) f.frozen = sp.freeze;
+        if (!f.dead && !ENEMIES[f.kind].heavy) f.frozen = sp.freeze;
+      }
+      break;
+    case 'quake':
+      w.emit({ type: 'fx', name: 'seisme', x: e.x, y: e.y });
+      for (const f of w.foes()) {
+        if (Math.hypot(f.x - e.x, f.y - e.y) >= sp.radius + f.r) continue;
+        applyDamage(w, f, magical(w, e, sp.power, f), { kind: 'magic', from: e, kb: 3 });
       }
       break;
     case 'heal':

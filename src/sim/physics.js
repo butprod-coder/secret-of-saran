@@ -44,7 +44,8 @@ function nudge(map, e, dx, dy) {
 
 // Écarte les corps qui se chevauchent. Les alliés se traversent entre eux (comme dans Mana).
 export function separate(map, ents) {
-  const bodies = ents.filter((e) => (e.type === 'hero' || e.type === 'enemy') && !e.dead && e.state !== 'ko');
+  // `ghost` : ennemi sous terre ou en plein saut, qu'on ne bouscule pas.
+  const bodies = ents.filter((e) => (e.type === 'hero' || e.type === 'enemy') && !e.dead && !e.ghost && e.state !== 'ko');
   for (let i = 0; i < bodies.length; i++) {
     for (let j = i + 1; j < bodies.length; j++) {
       const a = bodies[i];

@@ -189,6 +189,131 @@ test('les sauvegardes invalides ou trop récentes sont refusées', () => {
   assert(migrate(good).game.gold === good.game.gold, 'sauvegarde valide refusée');
 });
 
+// --- Jalon 6 : galeries de Gnomard, portes, boss ----------------------------------
+const galeries = MapData.fromTiled('galeries', await (await fetch('../assets/maps/galeries.tmj')).json());
+const cheneJson = await (await fetch('../assets/maps/chene.tmj')).json();
+const cellCenter = (c) => ({ x: c.tx * 16 + 8, y: c.ty * 16 + 8 });
+const dungeon = (seed = 11) => {
+  const w = World.fromSave({ map: galeries, game: playerWorld(seed).toSave(), entry: 'terrier' });
+  w.setController('gus', 'p0');
+  return w;
+};
+
+test('aucune sortie ni arrivée de carte ne tombe dans un mur', () => {
+  const chene = MapData.fromTiled('chene', cheneJson);
+  const all = { prairie: map, clairiere, galeries, chene };
+  for (const m of Object.values(all)) {
+    for (const wp of m.warps) {
+      assert(!m.isSolidAt(wp.x + wp.w / 2, wp.y + wp.h / 2), `${m.id} : sortie vers ${wp.map} murée`);
+      assert(all[wp.map]?.entries[wp.entry], `${m.id} : entrée ${wp.map}/${wp.entry} introuvable`);
+    }
+    for (const [name, e] of Object.entries(m.entries)) assert(!m.isSolidAt(e.x, e.y), `${m.id} : arrivée ${name} dans un mur`);
+  }
+});
+
+test('le levier ouvre la grille des galeries, une seule fois', () => {
+  const w = dungeon();
+  const door = galeries.doors.find((d) => d.until === 'galeries:levier');
+  const lever = galeries.levers[0];
+  const at = cellCenter(door.cells[0]);
+  assert(w.doorClosed(door) && galeries.isSolidAt(at.x, at.y), 'la grille devrait être fermée');
+  const gus = w.get('gus');
+  assert(!w.command({ type: 'open', actor: 'gus', chest: lever.key }), 'levier actionné de loin');
+  gus.x = lever.x; gus.y = lever.y + 14;
+  assert(w.command({ type: 'open', actor: 'gus', chest: lever.key }), 'levier refusé');
+  assert(!galeries.isSolidAt(at.x, at.y) && !w.doorClosed(door), 'grille toujours fermée');
+  assert(!w.command({ type: 'open', actor: 'gus', chest: lever.key }), 'levier actionné deux fois');
+});
+
+test('une Taupinarde sous terre est intouchable, puis surgit près du héros', () => {
+  const w = dungeon(12);
+  const gus = w.get('gus');
+  const t = w.s.ents.find((e) => e.kind === 'taupinarde');
+  assert(t && t.hidden && !w.foes().includes(t), 'la taupe sous terre devrait être invisible aux attaques');
+  t.x = gus.x + 30; t.y = gus.y;
+  let up = false;
+  for (let i = 0; i < 200 && !up; i++) { w.step({ gus: { mx: 0, my: 0, buttons: 0 } }); up = !t.hidden; }
+  assert(up && w.foes().includes(t), "elle n'est jamais sortie");
+  assert(Math.hypot(t.x - gus.x, t.y - gus.y) < 24, 'sortie trop loin du héros');
+});
+
+// Le groupe entre dans l'arène (les compagnons restent derrière, dans l'antichambre).
+const enterArena = (w) => {
+  const gus = w.get('gus');
+  const e = galeries.entries.arene;
+  for (const h of w.heroes()) { h.x = e.x; h.y = e.y + 48; }
+  gus.x = e.x; gus.y = e.y;
+  w.step({ gus: { mx: 0, my: 0, buttons: 0 } });
+};
+
+test("entrer dans l'arène réveille Gnomard, ferme la grille et y attire tout le groupe", () => {
+  const w = dungeon();
+  const boss = w.boss();
+  assert(boss && boss.state === 'sleep' && !w.foes().includes(boss), 'Gnomard devrait dormir, intouchable');
+  const door = galeries.doors.find((d) => d.during === 'boss');
+  assert(!w.doorClosed(door), "la grille de l'arène devrait être ouverte avant le combat");
+  enterArena(w);
+  assert(w.bossAwake() && w.foes().includes(boss), 'Gnomard ne se réveille pas');
+  assert(w.doorClosed(door) && galeries.isSolidAt(cellCenter(door.cells[0]).x, cellCenter(door.cells[0]).y), 'grille ouverte pendant le combat');
+  assert(w.heroes().every((h) => galeries.inArena(h.x, h.y)), 'un héros est resté dehors');
+});
+
+test('Gnomard encaisse sans broncher et résiste au Gel', () => {
+  const w = dungeon();
+  enterArena(w);
+  const boss = w.boss();
+  const kar = w.get('karonux');
+  kar.mp = 99; kar.x = boss.x - 20; kar.y = boss.y;
+  w.step({}, [{ type: 'cast', actor: 'karonux', spell: 'gel', target: boss.id }]);
+  run(w, 30);
+  assert(boss.hp < boss.maxHp, "le Gel n'a rien fait");
+  assert(!boss.frozen && boss.state !== 'hurt', 'Gnomard gelé ou étourdi');
+});
+
+test('Gnomard vaincu : drapeau, bonnet, grilles et ronces ouvertes, plus de boss au retour', () => {
+  const w = dungeon();
+  enterArena(w);
+  const boss = w.boss();
+  boss.hp = 1;
+  boss.state = 'recover'; boss.hidden = false; boss.t = 0; boss.wait = 999;
+  const gus = w.get('gus');
+  gus.x = boss.x - 14; gus.y = boss.y; gus.fx = 1; gus.fy = 0; gus.gauge = 100;
+  w.step({ gus: { mx: 0, my: 0, buttons: BTN.ATTACK } });
+  run(w, 20);
+  assert(w.s.flags.gnomard && !w.boss(), "Gnomard n'est pas vaincu");
+  assert(w.s.ents.some((e) => e.type === 'pickup' && e.item === 'bonnet'), 'pas de bonnet');
+  assert(galeries.doors.every((d) => !w.doorClosed(d) || d.until === 'galeries:levier'), 'une grille reste fermée');
+  const again = World.fromSave({ map: galeries, game: w.toSave(), entry: 'terrier' });
+  assert(!again.boss(), 'Gnomard réapparaît');
+  const c2 = World.fromSave({ map: clairiere, game: w.toSave(), entry: 'terrier' });
+  const ronces = clairiere.doors[0];
+  assert(ronces && !c2.doorClosed(ronces) && !clairiere.isSolidAt(cellCenter(ronces.cells[0]).x, cellCenter(ronces.cells[0]).y), 'les ronces bloquent encore');
+});
+
+test("le Séisme ne s'apprend qu'après Gnomard", () => {
+  const w = dungeon();
+  const kar = w.get('karonux');
+  kar.mp = 99;
+  w.step({}, [{ type: 'cast', actor: 'karonux', spell: 'seisme', target: 'karonux' }]);
+  assert(kar.state !== 'cast', 'Séisme lancé sans le connaître');
+  w.s.flags.gnomard = true;
+  w.step({}, [{ type: 'cast', actor: 'karonux', spell: 'seisme', target: 'karonux' }]);
+  assert(kar.state === 'cast' && kar.mp === 99 - 8, 'Séisme refusé après Gnomard');
+});
+
+test("un combat complet contre Gnomard (IA, niveau 7) se termine sans accroc", () => {
+  const w = dungeon(Number(new URLSearchParams(location.search).get('seed') ?? 21));
+  for (const h of w.heroes()) { while (h.lv < 7) w.gainXp(h, 10); h.hp = h.maxHp; h.mp = h.maxMp; }
+  enterArena(w);
+  w.setController('gus', 'ai');
+  let ticks = 0;
+  while (ticks < 60 * 300 && w.boss() && !w.s.gameOver) { w.step({}); ticks++; }
+  for (const e of w.s.ents) assert(Number.isFinite(e.x) && Number.isFinite(e.y), 'position invalide : ' + e.id);
+  const boss = w.boss();
+  window.bossFight = { ticks, won: !boss, bossHp: boss?.hp ?? 0, heroes: w.heroes().map((h) => `${h.hero} nv${h.lv} ${h.hp}/${h.maxHp}`) };
+  assert(!boss || w.s.gameOver || ticks >= 60 * 300, 'état incohérent');
+});
+
 // --- Jalon 5 : protocole hôte / invité, sans réseau (messages capturés) ---------
 {
   const maps = { prairie: mapJson, clairiere: await (await fetch('../assets/maps/clairiere.tmj')).json() };

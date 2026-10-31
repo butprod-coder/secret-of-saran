@@ -124,11 +124,22 @@ Les écrans de Cloudflare changent de temps en temps ; les noms des menus peuven
   - Chocolatine : rend des PV (et on ne dit pas « pain au chocolat »).
   - Eau de Loire : rend des PM.
   - Verre de l'amitié : relève un héros K.O.
-- **Lieux** : la Prairie de Saran (le bourg, la Loire) et, à l'est, la Lisière du Grand Chêne, avec l'étang de la Mère Ondine. Gnomard a fermé le passage vers le Grand Chêne.
-- **Équipement** : bandana de fanfare, casquette du PMU, casque de pompier, t-shirt de Saran, gilet de pêche, cotte de mailles rouillée, robe de chambre, gants de jardinage (ceux de Gnomard), bracelet brésilien, montre en toc.
+- **Lieux** :
+  - La Prairie de Saran : le bourg et la Loire.
+  - La Lisière du Grand Chêne, à l'est, avec l'étang de la Mère Ondine. Gnomard a fermé de ronces le chemin du Grand Chêne.
+  - Les Galeries de Gnomard (premier donjon) : on y descend par un terrier, à l'est de l'étang. Il y a deux ailes, une grille commandée par un levier, et l'arène du boss.
+  - Le Grand Chêne : on y arrive une fois Gnomard vaincu, par l'échelle de l'arène ou par le chemin libéré des ronces.
+- **Équipement** : bandana de fanfare, casquette du PMU, casque de pompier, bonnet de Gnomard, t-shirt de Saran, gilet de pêche, cotte de mailles rouillée, robe de chambre, gants de jardinage (ceux de Gnomard), bracelet brésilien, montre en toc.
 - **Bestiaire** :
   - Lapinfou : le Rabite local, avec un foulard de fanfare.
   - Champignard : il libère des spores.
+  - Taupinarde : elle file sous terre, où on ne peut pas la toucher, puis surgit pour mordre.
+- **Boss : Gnomard, gnome de jardin**. Il dort, statue de pierre, au fond de ses galeries.
+  - Entrer dans l'arène le réveille. La grille se ferme, et tout le groupe est attiré à l'intérieur.
+  - Il bondit et écrase le sol à l'atterrissage, frappe à la pelle, lance des cailloux en éventail, et creuse pour surgir sous vos pieds. Juste après, il reste un moment vulnérable.
+  - Sous la moitié de ses PV, il appelle deux Champignards et accélère.
+  - Il ne recule pas sous les coups et le Gel ne l'arrête pas.
+  - Vaincu, il laisse son bonnet et retire les ronces. Karonux apprend alors le Séisme (sort de terre, dégâts autour de lui).
 - **La boulangerie** est fermée le lundi, et c'est toujours lundi au début de l'aventure.
 
 ## Architecture
@@ -157,7 +168,7 @@ tests/                      tests de simulation dans le navigateur : http://loca
 ```
 
 - La simulation n'utilise ni `Math.random` ni l'horloge : son générateur aléatoire est seedé et stocké dans l'état. Les tests vérifient qu'avec la même graine et les mêmes entrées on obtient le même état, et qu'un aller-retour JSON ne change rien.
-- Les menus envoient des **commandes** (`cast`, `item`, `tactic`, `equip`, `open`) plutôt que de modifier l'état. En ligne, ce sont elles que les clients enverront à l'hôte.
+- Les menus envoient des **commandes** (`cast`, `item`, `tactic`, `equip`, `open` pour un coffre ou un levier) plutôt que de modifier l'état. En ligne, ce sont elles que les clients enverront à l'hôte.
 - **Changement de carte** : la simulation fige le monde quand un héros joueur entre dans une sortie. La session extrait alors le groupe (`World.toSave()`) et recrée le monde sur l'autre carte (`World.fromSave()`). C'est le même chemin que le chargement d'une sauvegarde.
 
 ## Modifier la carte
@@ -175,8 +186,13 @@ tests/                      tests de simulation dans le navigateur : http://loca
     - `chest` (propriétés `item` et/ou `gold`) : poser aussi la tuile de coffre sur `deco`. Son id d'objet Tiled sert à mémoriser qu'il est ouvert : ne pas le changer.
     - `warp` (propriétés `map` et `entry`) : rectangle de sortie.
     - `entry` (propriété `entry`) : point d'arrivée nommé, à placer hors du rectangle de sortie.
+    - `door` (propriétés `look` = `gate` ou `ronces`, plus `until` = drapeau ou `during` = `boss`) : porte, fermée tant que le drapeau n'est pas levé, ou pendant le combat de boss. Ses tuiles ne sont pas solides : c'est le jeu qui la ferme (`World.syncDoors`).
+    - `lever` (propriété `flag`) : levier qui lève ce drapeau, une seule fois.
+    - `arena` : rectangle de l'arène de boss. L'entrée nommée `arene` est l'endroit où le groupe est rassemblé.
+  - Propriété de carte `dark` : pénombre constante (souterrains), sans cycle jour/nuit.
+- **Murs de grotte** : dans le script, `Area ... 'x'` pose de la roche et `'c'` du sol de grotte. Le front du rocher est dessiné automatiquement au-dessus d'un sol.
 
 ## Prochaines étapes
 
-- **J6** : premier donjon et boss.
+- **J7** : la suite au Grand Chêne. Gnomard veut récupérer ses gants.
 - **Plus tard** : musique et bruitages ; une boutique pour dépenser les écus ; amélioration des armes ; prédiction des mouvements côté invité ; un serveur TURN si des amis n'arrivent pas à se connecter.

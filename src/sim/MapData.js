@@ -1,10 +1,16 @@
 // Données statiques d'une carte, lues depuis un fichier Tiled (.tmj) déjà parsé.
 // Ne fait pas partie de l'état sauvegardé : seul l'identifiant de carte l'est.
 export class MapData {
-  constructor({ id, name, width, height, tile, solid, low, start, spawns, signs, chests = [], warps = [], entries = {} }) {
-    Object.assign(this, { id, name, width, height, tile, solid, low, start, spawns, signs, chests, warps, entries });
+  constructor({
+    id, name, width, height, tile, solid, low, start, spawns, signs,
+    chests = [], warps = [], entries = {}, doors = [], levers = [], arena = null, dark = false,
+  }) {
+    Object.assign(this, { id, name, width, height, tile, solid, low, start, spawns, signs, chests, warps, entries, doors, levers, arena, dark });
     this.pixelWidth = width * tile;
     this.pixelHeight = height * tile;
+    // Cases des portes fermées. Ce n'est pas un état sauvegardé : le monde le recalcule à
+    // chaque pas à partir de ses drapeaux (voir World.syncDoors).
+    this.shut = new Uint8Array(width * height);
   }
 
   static fromTiled(id, json) {
@@ -61,7 +67,33 @@ export class MapData {
         x: o.x, y: o.y, w: o.width || tile, h: o.height || tile, map: prop(o, 'map'), entry: prop(o, 'entry'),
       })),
       entries: Object.fromEntries(objects.filter((o) => typeOf(o) === 'entry').map((o) => [prop(o, 'entry'), center(o)])),
+      // Porte : fermée jusqu'à ce que le drapeau `until` soit levé, ou pendant le combat de boss
+      // (`during` = 'boss'). `look` choisit les tuiles (grille, ronces).
+      doors: objects.filter((o) => typeOf(o) === 'door').map((o) => {
+        const tx = Math.floor(o.x / tile);
+        const ty = Math.floor(o.y / tile);
+        const cells = [];
+        for (let j = 0; j < Math.round((o.height || tile) / tile); j++) {
+          for (let i = 0; i < Math.round((o.width || tile) / tile); i++) cells.push({ tx: tx + i, ty: ty + j });
+        }
+        return { key: `${id}:${o.id}`, cells, until: prop(o, 'until'), during: prop(o, 'during'), look: prop(o, 'look', 'grille') };
+      }),
+      // Levier : l'actionner lève le drapeau `flag` (une seule fois).
+      levers: objects.filter((o) => typeOf(o) === 'lever').map((o) => ({
+        ...center(o), key: prop(o, 'flag'), tx: Math.floor(o.x / tile), ty: Math.floor(o.y / tile),
+      })),
+      // Arène : y entrer réveille le boss et y attire tout le groupe.
+      arena: (() => {
+        const o = objects.find((ob) => typeOf(ob) === 'arena');
+        return o ? { x: o.x, y: o.y, w: o.width, h: o.height } : null;
+      })(),
+      dark: !!prop(json, 'dark', false),
     });
+  }
+
+  inArena(px, py) {
+    const a = this.arena;
+    return !!a && px >= a.x && px < a.x + a.w && py >= a.y && py < a.y + a.h;
   }
 
   warpAt(px, py) {
@@ -77,11 +109,11 @@ export class MapData {
 
   isSolidAt(px, py) {
     const i = this.cell(px, py);
-    return i < 0 || this.solid[i] === 1;
+    return i < 0 || this.solid[i] === 1 || this.shut[i] === 1;
   }
 
   blocksProjectileAt(px, py) {
     const i = this.cell(px, py);
-    return i < 0 || this.low[i] === 2;
+    return i < 0 || this.low[i] === 2 || this.shut[i] === 1;
   }
 }

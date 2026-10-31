@@ -4,7 +4,7 @@
 import { BTN } from '../sim/input.js';
 import { MapData } from '../sim/MapData.js';
 import { World } from '../sim/World.js';
-import { inFront } from '../game/Session.js';
+import { inFront, usableInFront } from '../game/Session.js';
 import { browserToken, net, netError } from './Net.js';
 import { INPUT_KEEPALIVE_MS, PING_EVERY_MS, SNAPSHOT_MS } from './config.js';
 
@@ -170,5 +170,5 @@ export class RemoteSession {
   }
 
   signInFront(hero) { return inFront(hero, this.map.signs); }
-  chestInFront(hero) { return inFront(hero, this.map.chests.filter((c) => !this.world.s.flags[c.key])); }
+  chestInFront(hero) { return usableInFront(hero, this.map, this.world.s.flags); }
 }

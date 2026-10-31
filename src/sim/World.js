@@ -11,7 +11,7 @@ import { GEAR, SLOTS, START_GEAR, canWear } from './data/equipment.js';
 import { MAX_WEAPON_LV } from './data/weapons.js';
 import { blockedAt, moveBody, separate } from './physics.js';
 import { makeHero, refreshStats, updateHero } from './hero.js';
-import { makeEnemy, updateEnemy } from './enemy.js';
+import { makeEnemy, updateEnemy, wakeBoss } from './enemy.js';
 import { updateProjectile } from './projectile.js';
 import { startCast, useItem } from './magic.js';
 import { allyThink } from './ai/ally.js';
@@ -46,6 +46,7 @@ export class World {
     };
     this.createParty(map.start);
     this.s.spawns.forEach((_, i) => this.spawnFromPoint(i));
+    this.syncDoors();
   }
 
   // --- Sauvegarde -------------------------------------------------------------
@@ -89,6 +90,10 @@ export class World {
       refreshStats(h);
       if (h.hp <= 0) Object.assign(h, { hp: 0, state: 'ko' });
     }
+    // Les drapeaux viennent d'arriver : un boss déjà vaincu disparaît, les portes s'ouvrent.
+    for (const e of s.ents) if (e.type === 'enemy' && ENEMIES[e.kind].boss && s.flags[e.kind]) e.dead = true;
+    s.ents = s.ents.filter((e) => !e.dead);
+    w.syncDoors();
     return w;
   }
 
@@ -99,7 +104,10 @@ export class World {
   get(id) { return id == null ? null : this.s.ents.find((e) => e.id === id) ?? null; }
   heroes() { return this.s.ents.filter((e) => e.type === 'hero'); }
   heroesAlive() { return this.s.ents.filter((e) => e.type === 'hero' && e.state !== 'ko'); }
-  foes() { return this.s.ents.filter((e) => e.type === 'enemy' && !e.dead); }
+  // Ennemis qu'on peut viser : pas ceux sous terre, en plein saut ou encore endormis.
+  foes() { return this.s.ents.filter((e) => e.type === 'enemy' && !e.dead && !e.hidden); }
+  boss() { return this.s.ents.find((e) => e.type === 'enemy' && !e.dead && ENEMIES[e.kind].boss) ?? null; }
+  bossAwake() { const b = this.boss(); return !!b && b.state !== 'sleep'; }
 
   nearest(list, from, range) {
     let best = null;
@@ -146,6 +154,7 @@ export class World {
 
   spawnFromPoint(i) {
     const sp = this.s.spawns[i];
+    if (ENEMIES[sp.kind].boss && this.s.flags[sp.kind]) return; // vaincu une fois pour toutes
     const e = makeEnemy(this, sp.kind, sp.x, sp.y, i);
     this.s.ents.push(e);
     sp.ent = e.id;
@@ -177,6 +186,12 @@ export class World {
     }
     const sp = this.s.spawns[e.spawn];
     if (sp) { sp.ent = null; sp.timer = RESPAWN_TICKS; }
+    if (d.boss) {
+      this.s.flags[e.kind] = true;
+      // Ses sbires s'enfuient avec lui.
+      for (const f of this.s.ents) if (f.type === 'enemy' && f.minion) { f.dead = true; this.emit({ type: 'fx', name: 'poof', x: f.x, y: f.y }); }
+      this.emit({ type: 'bossdown', kind: e.kind, x: e.x, y: e.y });
+    }
   }
 
   gainXp(h, amount) {
@@ -227,6 +242,51 @@ export class World {
     return true;
   }
 
+  pullLever(actorId, key) {
+    const h = this.get(actorId);
+    const l = this.map.levers.find((lv) => lv.key === key);
+    if (!h || h.state === 'ko' || !l || this.s.flags[key]) return false;
+    if (Math.hypot(h.x - l.x, h.y - l.y) > 28) return false;
+    this.s.flags[key] = true;
+    this.syncDoors();
+    this.emit({ type: 'lever', id: h.id, key, tx: l.tx, ty: l.ty });
+    return true;
+  }
+
+  // --- Portes et arène --------------------------------------------------------
+  doorClosed(d) {
+    if (d.during === 'boss') return this.bossAwake();
+    return !!d.until && !this.s.flags[d.until];
+  }
+
+  // Recopie l'état des portes dans la grille de collision de la carte.
+  syncDoors() {
+    const m = this.map;
+    m.shut.fill(0);
+    for (const d of m.doors) {
+      if (!this.doorClosed(d)) continue;
+      for (const c of d.cells) m.shut[c.ty * m.width + c.tx] = 1;
+    }
+  }
+
+  // Un héros joueur entre dans l'arène : le boss se réveille, le groupe entier est attiré
+  // à l'entrée de l'arène (personne ne reste coincé derrière la grille qui se ferme).
+  checkArena() {
+    const b = this.boss();
+    if (!b || b.state !== 'sleep' || !this.map.arena) return;
+    if (!this.heroes().some((h) => h.controller !== 'ai' && h.state !== 'ko' && this.map.inArena(h.x, h.y))) return;
+    wakeBoss(this, b);
+    const at = this.map.entries.arene ?? this.map.start;
+    const offsets = [[0, 0], [-16, 6], [16, 6]];
+    this.heroes().forEach((h, i) => {
+      if (this.map.inArena(h.x, h.y)) return;
+      const [ox, oy] = offsets[i % offsets.length];
+      Object.assign(h, { x: at.x + ox, y: at.y + oy, px: at.x + ox, py: at.y + oy, kx: 0, ky: 0 });
+      this.emit({ type: 'fx', name: 'poof', x: h.x, y: h.y });
+    });
+    this.emit({ type: 'boss', id: b.id, kind: b.kind });
+  }
+
   // --- Commandes (menus, IA) : passent aussi par le réseau plus tard --------
   command(c) {
     switch (c.type) {
@@ -239,7 +299,8 @@ export class World {
       }
       case 'control': return this.setController(c.hero, c.controller);
       case 'equip': return this.equip(c.hero, c.slot, c.gear);
-      case 'open': return this.openChest(c.actor, c.chest);
+      // Coffre ou levier : même geste, même commande.
+      case 'open': return this.map.levers.some((l) => l.key === c.chest) ? this.pullLever(c.actor, c.chest) : this.openChest(c.actor, c.chest);
       default: return false;
     }
   }
@@ -251,6 +312,7 @@ export class World {
     if (s.gameOver || s.warp) return;
     for (const e of s.ents) { e.px = e.x; e.py = e.y; }
     for (const c of commands) this.command(c);
+    this.syncDoors();
 
     for (const h of this.heroes()) {
       let inp = NO_INPUT;
@@ -269,6 +331,8 @@ export class World {
     this.integrate();
     s.ents = s.ents.filter((e) => !e.dead);
     this.updateSpawns();
+    this.checkArena();
+    this.syncDoors();
     this.checkWarps();
 
     s.clock++;

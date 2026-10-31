@@ -10,6 +10,7 @@ export const GEAR = {
   bandana: { name: 'Bandana de fanfare', slot: 'head', def: 2, who: ALL, desc: 'Celui des Lapinfous. Il sent le lapin.' },
   casquette: { name: 'Casquette du PMU', slot: 'head', def: 3, mag: 1, who: ALL, desc: 'Porte-bonheur, paraît-il.' },
   casque: { name: 'Casque de pompier', slot: 'head', def: 5, who: ['gus'], desc: 'Prêté par la caserne. À rendre lundi.' },
+  bonnet: { name: 'Bonnet de Gnomard', slot: 'head', def: 4, mag: 4, who: ALL, desc: 'Pointu, rouge, et il ne le reverra jamais.' },
   // Corps
   tshirt: { name: 'T-shirt de Saran', slot: 'body', def: 2, who: ALL, desc: 'Taille unique. Trop grand pour tout le monde.' },
   gilet: { name: 'Gilet de pêche', slot: 'body', def: 4, who: ALL, desc: 'Vingt-deux poches, toutes vides.' },

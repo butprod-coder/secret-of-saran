@@ -4,7 +4,7 @@ import { GAME_H, GAME_W } from '../../config.js';
 import { BTN } from '../../sim/input.js';
 import { HEROES, TACTICS, TACTIC_NAMES } from '../../sim/data/heroes.js';
 import { ITEMS, ITEM_ORDER } from '../../sim/data/items.js';
-import { SPELLS } from '../../sim/data/spells.js';
+import { SPELLS, spellKnown } from '../../sim/data/spells.js';
 import { drawWindow, setText, text } from './widgets.js';
 import { measure } from '../art/font.js';
 import { ListWindow } from './ListWindow.js';
@@ -86,7 +86,7 @@ export class RingMenu {
     if (this.ring === 1) {
       const list = [];
       for (const h of w.heroes()) {
-        for (const sp of HEROES[h.hero].spells) {
+        for (const sp of HEROES[h.hero].spells.filter((id) => spellKnown(w.s.flags, id))) {
           const s = SPELLS[sp];
           list.push({
             kind: 'spell', id: sp, caster: h.id, icon: sp, label: s.name,
@@ -168,6 +168,10 @@ export class RingMenu {
       candidates = ITEMS[e.id].target === 'ko' ? w.heroes().filter((h) => h.state === 'ko') : w.heroesAlive();
     } else {
       const caster = w.get(e.caster);
+      if (SPELLS[e.id].target === 'self') {
+        this.session.queueCommand({ type: 'cast', actor: e.caster, spell: e.id, target: e.caster });
+        return this.close();
+      }
       candidates = SPELLS[e.id].target === 'foe'
         ? w.foes().filter((f) => Math.hypot(f.x - caster.x, f.y - caster.y) < 200).sort((a, b) => Math.hypot(a.x - caster.x, a.y - caster.y) - Math.hypot(b.x - caster.x, b.y - caster.y))
         : w.heroesAlive();

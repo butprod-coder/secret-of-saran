@@ -3,6 +3,7 @@
 import { DAY_TICKS, GAME_H, GAME_W } from '../../config.js';
 import { BTN } from '../../sim/input.js';
 import { HEROES, HERO_ORDER } from '../../sim/data/heroes.js';
+import { ENEMIES } from '../../sim/data/enemies.js';
 import { measure } from '../art/font.js';
 import { bar, drawWindow, setText, text } from '../ui/widgets.js';
 import { RingMenu } from '../ui/RingMenu.js';
@@ -22,6 +23,14 @@ const INTRO = [
   { who: 'Lorenzo', text: 'Les lapins... ont des chocolatines ?' },
   { who: 'Gus', text: "Fais-moi confiance. J'ai une épée." },
   { who: '', text: 'J / Espace : attaquer (maintenir pour charger). K : ring menu. Tab : changer de héros. Maj : courir. Une manette rejoint la partie en appuyant sur un bouton.' },
+];
+
+const GNOMARD_DEFEATED = [
+  { who: 'Gnomard', text: "Aïe ! Mes bégonias... D'accord, d'accord ! Je retire les ronces du Grand Chêne." },
+  { who: 'Gnomard', text: "Et toi, le mage myope : tiens. Un Séisme, c'est comme un coup de pelle, mais en plus grand." },
+  { who: '', text: 'Karonux apprend le Séisme de Gnomard ! (Ring menu, anneau Magie)' },
+  { who: 'Gus', text: 'On peut garder le bonnet ?' },
+  { who: 'Gnomard', text: '...' },
 ];
 
 export class UIScene extends Phaser.Scene {
@@ -48,6 +57,7 @@ export class UIScene extends Phaser.Scene {
         pct: text(this, x + PANEL_W - 6, PANEL_Y + 13, '', { origin: 1 }),
       };
     });
+    this.bossText = text(this, GAME_W / 2, PANEL_Y - 19, '', { tint: 0xffb0a0, origin: 0.5 });
     this.goldText = text(this, 8, 5, '', { tint: 0xffe080 });
     this.clockText = text(this, GAME_W - 7, 5, '', { origin: 1 });
     this.netText = text(this, GAME_W / 2, 5, '', { tint: 0xa8e0a8, origin: 0.5 });
@@ -130,6 +140,11 @@ export class UIScene extends Phaser.Scene {
     this.tweens.add({ targets: [g, t], alpha: 0, delay: 2600, duration: 600, onComplete: () => { g.destroy(); t.destroy(); } });
   }
 
+  victory(kind) {
+    if (kind !== 'gnomard') return;
+    this.dialogue.start(GNOMARD_DEFEATED, () => this.suppressAll());
+  }
+
   showGameOver() {
     if (this.gameOver) return;
     this.gameOver = true;
@@ -191,6 +206,18 @@ export class UIScene extends Phaser.Scene {
         }
       }
     }
+    // Combat de boss : sa jauge de PV au-dessus des panneaux des héros.
+    const boss = w.bossAwake() && !this.dialogue.active ? w.boss() : null;
+    this.bossText.setVisible(!!boss);
+    if (boss) {
+      const bw = 190;
+      const bx = Math.round((GAME_W - bw) / 2);
+      drawWindow(g, bx, PANEL_Y - 24, bw, 20, 0.9);
+      setText(this.bossText, ENEMIES[boss.kind].name);
+      const frac = boss.hp / boss.maxHp;
+      bar(g, bx + 8, PANEL_Y - 11, bw - 16, 3, frac, frac < 0.5 ? 0xec6c44 : 0xc8402e);
+    }
+
     const goldStr = `${s.gold} écus`;
     drawWindow(g, 2, 2, measure(goldStr) + 13, 14, 0.85);
     setText(this.goldText, goldStr);

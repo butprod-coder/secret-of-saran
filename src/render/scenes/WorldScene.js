@@ -11,6 +11,7 @@ import { HEROES } from '../../sim/data/heroes.js';
 import { WEAPONS } from '../../sim/data/weapons.js';
 import { lootName } from '../../sim/data/items.js';
 import { SPELLS } from '../../sim/data/spells.js';
+import { ENEMIES } from '../../sim/data/enemies.js';
 import { makeSave } from '../../save/format.js';
 import { saves } from '../../save/SaveStore.js';
 import { createView } from '../views.js';
@@ -99,9 +100,30 @@ export class WorldScene extends Phaser.Scene {
     this.deco = map.createLayer('deco', ts, 0, 0).setDepth(-10);
     map.createLayer('above', ts, 0, 0).setDepth(100000);
     this.tilemap = map;
-    this.openGid = this.cache.json.get('tiledefs').groups.find((g) => g.name === 'chest').start + 2;
-    for (const c of this.session.map.chests) if (this.session.world.s.flags[c.key]) this.deco.putTileAt(this.openGid, c.tx, c.ty);
+    const gid = (name, v) => this.cache.json.get('tiledefs').groups.find((g) => g.name === name).start + v + 1;
+    this.gid = gid;
+    const flags = this.session.world.s.flags;
+    for (const c of this.session.map.chests) if (flags[c.key]) this.deco.putTileAt(gid('chest', 1), c.tx, c.ty);
+    for (const l of this.session.map.levers) if (flags[l.key]) this.deco.putTileAt(gid('lever', 1), l.tx, l.ty);
+    this.doorShown = new Map();
+    this.syncDoorTiles();
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+  }
+
+  // Grilles et ronces suivent l'état du monde (levier tiré, boss réveillé ou vaincu).
+  syncDoorTiles() {
+    const w = this.session.world;
+    for (const d of this.session.map.doors) {
+      const closed = w.doorClosed(d);
+      if (this.doorShown.get(d.key) === closed) continue;
+      const changed = this.doorShown.has(d.key); // sinon : premier affichage de la carte
+      this.doorShown.set(d.key, closed);
+      for (const c of d.cells) {
+        this.deco.putTileAt(this.gid(d.look, closed ? 0 : 1), c.tx, c.ty);
+        if (changed && !closed) this.puff(c.tx * 16 + 8, c.ty * 16 + 8);
+      }
+      if (changed && closed) this.cameras.main.shake(140, 0.005); // la grille retombe
+    }
   }
 
   update(time, delta) {
@@ -193,11 +215,16 @@ export class WorldScene extends Phaser.Scene {
     // Caméra : centrée sur les héros joueurs, un peu au-dessus à cause du HUD.
     const humans = this.session.players.filter((p) => !p.remote).map((p) => this.renderPos.get(p.hero)).filter(Boolean);
     if (humans.length) {
-      const cx = humans.reduce((t, p) => t + p.x, 0) / humans.length;
-      const cy = humans.reduce((t, p) => t + p.y, 0) / humans.length;
+      let cx = humans.reduce((t, p) => t + p.x, 0) / humans.length;
+      let cy = humans.reduce((t, p) => t + p.y, 0) / humans.length;
+      // Combat de boss : on recule la caméra vers lui pour garder tout le monde à l'écran.
+      const boss = this.session.world.bossAwake() && this.renderPos.get(this.session.world.boss().id);
+      if (boss) { cx = cx * 0.6 + boss.x * 0.4; cy = cy * 0.6 + (boss.y - 16) * 0.4; }
       this.cameras.main.setScroll(Math.round(cx - GAME_W / 2), Math.round(cy - GAME_H / 2 + 6));
     }
-    this.night.fillColor = skyTint((s.clock / DAY_TICKS) * 24);
+    // Sous terre, ni jour ni nuit : une pénombre constante.
+    this.night.fillColor = this.session.map.dark ? 0x9a90c0 : skyTint((s.clock / DAY_TICKS) * 24);
+    this.syncDoorTiles();
   }
 
   screenPos(id) {
@@ -240,8 +267,28 @@ export class WorldScene extends Phaser.Scene {
         case 'pickup':
           this.floatText(ev.x, ev.y - 14, ev.item ? lootName(ev.item) : `+${ev.gold} écus`, ev.item ? 0x90ff90 : 0xffe080);
           break;
+        case 'lever':
+          this.deco.putTileAt(this.gid('lever', 1), ev.tx, ev.ty);
+          this.ui?.toast('Clac ! Une grille grince quelque part.', 0xffe080);
+          this.cameras.main.shake(100, 0.003);
+          break;
+        case 'say': {
+          const e = world.get(ev.id);
+          if (e) this.floatText(e.x, e.y - 46, '!', 0xff6060, 500);
+          this.ui?.toast(`${ENEMIES[e?.kind]?.name.split(',')[0] ?? ''} : « ${ev.text} »`, 0xffb0a0);
+          break;
+        }
+        case 'boss':
+          this.ui?.banner(ENEMIES[ev.kind].name);
+          this.cameras.main.shake(300, 0.006);
+          break;
+        case 'bossdown':
+          this.cameras.main.shake(500, 0.01);
+          for (let i = 0; i < 6; i++) this.time.delayedCall(i * 90, () => this.puff(ev.x - 14 + (i % 3) * 14, ev.y - 8 - Math.floor(i / 3) * 12));
+          this.ui?.victory(ev.kind);
+          break;
         case 'chest': {
-          this.deco.putTileAt(this.openGid, ev.tx, ev.ty);
+          this.deco.putTileAt(this.gid('chest', 1), ev.tx, ev.ty);
           const what = [ev.item && lootName(ev.item), ev.gold && `${ev.gold} écus`].filter(Boolean).join(' et ');
           this.ui?.toast(`${HEROES[world.get(ev.id)?.hero]?.name} trouve : ${what || 'rien. Une toile d\'araignée.'}`, 0xffe080);
           this.puff(ev.tx * 16 + 8, ev.ty * 16 + 4);
@@ -325,6 +372,18 @@ export class WorldScene extends Phaser.Scene {
       case 'bouclier': {
         const s = this.add.image(Math.round(ev.x), Math.round(ev.y - 12), 'fx', 'bouclier').setDepth(140000);
         this.tweens.add({ targets: s, alpha: 0, duration: 700, delay: 200, onComplete: () => s.destroy() });
+        break;
+      }
+      case 'quake': case 'seisme': {
+        const s = this.add.image(Math.round(ev.x), Math.round(ev.y), 'fx', ev.name).setDepth(ev.y - 1).setScale(0.5);
+        this.tweens.add({ targets: s, scale: ev.name === 'seisme' ? 2 : 1.3, alpha: 0, duration: 420, onComplete: () => s.destroy() });
+        this.cameras.main.shake(180, ev.name === 'seisme' ? 0.006 : 0.008);
+        break;
+      }
+      case 'slam': {
+        const s = this.add.image(Math.round(ev.x), Math.round(ev.y - 4), 'fx', 'slam').setDepth(ev.y + 2);
+        this.tweens.add({ targets: s, alpha: 0, y: s.y - 5, duration: 380, onComplete: () => s.destroy() });
+        this.cameras.main.shake(120, 0.006);
         break;
       }
       case 'spores': {
