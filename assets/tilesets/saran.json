@@ -1,0 +1,23 @@
+{
+  "name": "saran",
+  "tile": 16,
+  "columns": 16,
+  "rows": 8,
+  "groups": [
+    { "name": "grass", "start": 0, "count": 3 },
+    { "name": "flowers", "start": 3, "count": 2 },
+    { "name": "dirt", "start": 5, "count": 1 },
+    { "name": "rock", "start": 8, "count": 1, "solid": true },
+    { "name": "bush", "start": 9, "count": 1, "solid": true },
+    { "name": "sign", "start": 10, "count": 1, "solid": true },
+    { "name": "fence", "start": 11, "count": 1, "solid": true },
+    { "name": "bridge", "start": 12, "count": 1 },
+    { "name": "block", "start": 13, "count": 1, "solid": true },
+    { "name": "chest", "start": 14, "count": 2, "solid": true },
+    { "name": "water", "start": 16, "count": 16, "solid": true, "low": true },
+    { "name": "path", "start": 32, "count": 16 },
+    { "name": "tree", "start": 48, "count": 4, "solidFrom": 2 },
+    { "name": "house", "start": 64, "count": 20, "solidFrom": 5 },
+    { "name": "bakery", "start": 84, "count": 20, "solidFrom": 5 }
+  ]
+}

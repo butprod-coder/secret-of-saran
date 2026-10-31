@@ -1,0 +1,27 @@
+// Palette unique du jeu : tons chauds, contours sombres. Tous les sprites piochent ici.
+export const C = {
+  ink: '#1c1018', black: '#141018', white: '#fbf6ea',
+  skin: '#f4c290', skinS: '#d08c60', skinL: '#ffe2bc', blush: '#f09a80',
+  hairD: '#34262a', hairDS: '#1e1418', hairDL: '#5a4448',
+  brown: '#7c4c2c', brownS: '#55301c', brownL: '#a8703e',
+  red: '#c8402e', redS: '#8c2620', redL: '#ec6c44',
+  navy: '#2e3c74', navyS: '#1e284e', navyL: '#4e62a8',
+  suit: '#3a3a4c', suitS: '#262636', suitL: '#56566c',
+  steel: '#8e9aac', steelS: '#5e6878', steelL: '#e4ecf4',
+  gold: '#f2c244', goldS: '#b48224', goldL: '#fff0a0',
+  grass: '#68a83c', grassS: '#4c8a2e', grassD: '#386a26', grassL: '#8cc650',
+  leaf: '#3e8a36', leafS: '#2a6428', leafD: '#1c4420', leafL: '#6cb44a',
+  dirt: '#c89c5c', dirtS: '#a27444', dirtL: '#e2bc7c',
+  water: '#3a78c6', waterS: '#2a56a0', waterL: '#6aa6e6', foam: '#cbe8f6',
+  stone: '#9c968c', stoneS: '#6c665e', stoneL: '#cec6b6',
+  wood: '#8c5c34', woodS: '#5e3a20', woodL: '#b47c48',
+  roof: '#b84a30', roofS: '#863222', roofL: '#de7450',
+  plaster: '#f2e2c2', plasterS: '#ccb88e',
+  orange: '#f0a040', orangeS: '#c07028', orangeL: '#ffd880',
+  pink: '#f4a0b0', purple: '#7c4ca4', purpleL: '#b48ad8', purpleS: '#523070',
+  cream: '#f6ead0', creamS: '#d6c49e',
+  glass: '#8cc8f0', green: '#48a048', greenL: '#a0e870', greenS: '#2c6c34',
+  ice: '#bfe8ff', iceS: '#6aa8e0',
+};
+
+export const hex = (c) => parseInt(c.slice(1), 16);
