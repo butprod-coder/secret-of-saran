@@ -12,16 +12,20 @@ const MIGRATIONS = {};
 
 export class SaveError extends Error {}
 
-export function makeSave(world, mapName) {
+// `coop` (facultatif, partie en ligne) : { code, guests: { jetonInvité: héros } }, pour rouvrir
+// la même salle et rendre à chaque invité son héros.
+export function makeSave(world, mapName, coop = null) {
   const game = world.toSave();
   const lead = HERO_ORDER.map((id) => game.heroes[id]).filter(Boolean);
-  return {
+  const save = {
     format: SAVE_FORMAT,
     version: SAVE_VERSION,
     savedAt: new Date().toISOString(),
     summary: { map: mapName, lv: Math.max(...lead.map((h) => h.lv)), tick: game.tick, gold: game.gold },
     game,
   };
+  if (coop) save.coop = coop;
+  return save;
 }
 
 // Vérifie, met à jour et renvoie une sauvegarde lue d'IndexedDB ou d'un fichier importé.
@@ -37,6 +41,10 @@ export function migrate(raw) {
     d.version++;
   }
   validate(d.game);
+  // Partie en ligne : simple confort, on l'ignore si elle est abîmée.
+  const c = d.coop;
+  if (c && (typeof c.code !== 'string' || !/^[A-Z]{4}$/.test(c.code) || !c.guests || typeof c.guests !== 'object'
+    || Object.values(c.guests).some((h) => !HEROES[h]))) delete d.coop;
   return d;
 }
 

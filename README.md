@@ -3,7 +3,7 @@
 Action-RPG coopératif en pixel art 16 bits, inspiré de *Secret of Mana*, dans l'univers de Saranfou.
 Trois héros : **Gus** (bretteur), **Karonux** (mage), **Lorenzo** (soigneur).
 
-**État** : jalons 1 à 4 (carte, combat, trois héros et IA, ring menu, équipement, sauvegardes, deux cartes reliées).
+**État** : jalons 1 à 5 (carte, combat, trois héros et IA, ring menu, équipement, sauvegardes, deux cartes reliées, co-op en ligne à 3).
 
 ## Jouer
 
@@ -33,6 +33,47 @@ Ne pas ouvrir `index.html` directement en `file://`, car les modules ES y sont b
 - **Compagnons IA** : tactique Agressif, Défensif ou Suivre, réglable dans l'anneau Tactique. Lorenzo soigne seul les alliés sous 50 % de PV.
 - **Multijoueur local** : une manette rejoint la partie dès qu'on appuie sur un bouton. La première va au joueur 1, les suivantes reprennent un héros de l'IA. Si on la débranche, le héros repasse sous IA.
 
+## Co-op en ligne
+
+Jusqu'à 3 joueurs, chacun sur son ordinateur. Écran titre > **Co-op en ligne** :
+
+| Choix | Effet |
+|---|---|
+| Héberger une nouvelle partie / la dernière sauvegarde / un fichier .json | Ouvre une salle. Son code (4 lettres) s'affiche en haut de l'écran. |
+| Rejoindre avec un code | Haut/bas change la lettre, gauche/droite passe à la suivante, valider rejoint. |
+
+- **Lien d'invitation** : `https://adresse-du-jeu/?room=ABCD` ouvre directement la saisie du code.
+- **Héros** : un invité reprend le premier héros contrôlé par l'IA ; Tab / LB passe au suivant libre.
+- **Hôte** : c'est son navigateur qui fait tourner la partie. Il peut réduire sa fenêtre, la partie continue ; s'il la ferme, les invités reviennent à l'écran titre.
+- **Menus** : avec des invités connectés, ouvrir le ring menu ne met plus le jeu en pause (comme dans une partie à plusieurs, le monde continue).
+- **Coupure d'un invité** : son héros passe sous IA. S'il revient dans les 30 secondes depuis le même navigateur, il retrouve sa place et son héros.
+- **Sauvegardes** : seul l'hôte sauvegarde (auto + emplacements). La sauvegarde retient le code de salle et le héros de chaque invité : en rehébergeant cette sauvegarde, l'hôte rouvre la même salle (si le code est libre) et chacun récupère son héros.
+- **Changer d'hôte** : un invité peut **exporter** la partie (anneau Système). En l'hébergeant à son tour (« Héberger un fichier .json »), il devient l'hôte.
+
+**Fonctionnement** : l'hôte fait autorité. Les invités envoient leurs entrées et leurs commandes de menu ; l'hôte renvoie l'état du monde 20 fois par seconde, et l'invité l'affiche en interpolant. Il n'y a pas encore de prédiction côté invité : ses mouvements apparaissent avec le délai du réseau (en pratique 50 à 150 ms).
+
+**Réseau** : la mise en relation passe par le serveur public gratuit de PeerJS (`0.peerjs.com`), ensuite les joueurs se parlent en direct (WebRTC). Certains réseaux (entreprise, certaines box ou connexions mobiles) bloquent la connexion directe : il faut alors un serveur relais TURN, à déclarer dans `ICE_SERVERS` de [src/net/config.js](src/net/config.js).
+
+**Tester seul** : ouvrir deux fenêtres du navigateur (pas deux onglets : un onglet caché est ralenti par le navigateur), héberger dans l'une, rejoindre dans l'autre. Ajouter `?lag=120&jitter=40` à l'adresse simule 120 ms de latence (plus 0 à 40 ms aléatoires) sur chaque message envoyé.
+
+## Mettre le jeu en ligne (Cloudflare Pages)
+
+Le jeu n'est que des fichiers statiques : pas de build, pas de serveur à faire tourner. Cloudflare Pages les sert gratuitement en HTTPS (obligatoire pour WebRTC), directement depuis le dépôt GitHub.
+
+1. Créer un compte gratuit sur **dash.cloudflare.com**.
+2. Menu **Workers & Pages** > **Créer** > onglet **Pages** > **Se connecter à Git** (« Connect to Git »).
+3. Autoriser Cloudflare à accéder à GitHub, puis choisir le dépôt `secret-of-saran`.
+4. Réglages du build :
+   - Branche de production : `main`.
+   - Framework : **Aucun** (« None »).
+   - Commande de build : **vide**.
+   - Répertoire de sortie : **vide** (ou `/`) : le site est la racine du dépôt.
+5. **Enregistrer et déployer**. Au bout d'une minute, le jeu est sur `https://secret-of-saran.pages.dev` (ou un nom proche, si celui-ci est pris).
+
+Ensuite, chaque `git push` sur `main` redéploie le site tout seul. Les sauvegardes dépendant de l'adresse, celles faites sur `localhost:8080` n'apparaissent pas sur le site : les exporter puis les importer.
+
+Les écrans de Cloudflare changent de temps en temps ; les noms des menus peuvent varier légèrement.
+
 ## Sauvegardes
 
 - **Automatique** : à chaque changement de carte, dans l'emplacement « Auto ».
@@ -45,7 +86,7 @@ Ne pas ouvrir `index.html` directement en `file://`, car les modules ES y sont b
 - **Contenu** : le groupe (niveaux, PV/PM, armes, équipement, tactiques), le sac, les écus, l'heure, les coffres ouverts et la position. Les ennemis repartent de zéro.
 - **Format** : JSON versionné (`version`), vérifié à la lecture. Une sauvegarde abîmée ou faite par une version plus récente est refusée avec un message ; les anciennes sont mises à jour par les migrations de [src/save/format.js](src/save/format.js).
 - **Écriture atomique** : un emplacement est écrit en une seule transaction IndexedDB, après un contrôle aller-retour. On ne peut pas obtenir un mélange de l'ancienne et de la nouvelle sauvegarde.
-- **Co-op** : même format. Seul l'hôte sauvegardera ; un autre joueur pourra devenir hôte en important le fichier (jalon 5).
+- **Co-op** : même format (voir « Co-op en ligne »).
 
 ## Manettes Bluetooth
 
@@ -60,6 +101,7 @@ Ne pas ouvrir `index.html` directement en `file://`, car les modules ES y sont b
 | Délai dépassé | Le joueur quitte la partie ; il pourra rejoindre en appuyant sur un bouton. |
 
 - **Vibrations** : quand son héros est touché, à chaque niveau de charge et lors d'un K.O. Elles marchent sur les manettes Xbox et DualSense sous Chrome ou Edge ; Firefox n'expose pas la vibration.
+- **Faux positifs** : un appareil sans stick (casque avec boutons d'appel, par exemple) est ignoré. Un bouton déjà enfoncé au moment où la manette apparaît ne compte pas comme un appui.
 - **Mappings** :
   - Chrome et Edge présentent la plupart des manettes Bluetooth (Xbox, DualSense, DualShock 4, Switch Pro) en mapping « standard ».
   - En mode non standard (Firefox, certains pilotes DirectInput), le jeu lit la croix directionnelle codée sur un seul axe. Il applique aussi la disposition Sony quand l'identifiant le permet.
@@ -96,6 +138,7 @@ play.bat, tools/serve.ps1   serveur statique local
 tools/build-map.ps1         génère assets/maps/*.tmj (format Tiled)
 assets/tilesets/saran.json  index des tuiles, partagé par le générateur de carte et le jeu
 vendor/phaser.min.js        Phaser 3.80.1
+vendor/peerjs.min.js        PeerJS 1.5.4 (WebRTC)
 src/sim/                    simulation pure (sans Phaser ni DOM), pas fixe à 60 Hz
   World.js                  état sérialisable (this.s), step(inputs, commands)
   hero.js, enemy.js, magic.js, projectile.js, combat.js, physics.js
@@ -103,6 +146,8 @@ src/sim/                    simulation pure (sans Phaser ni DOM), pas fixe à 60
   data/                     héros, armes, sorts, objets, équipement, bestiaire
 src/save/                   format versionné + migrations, IndexedDB, fichiers .json
 src/game/Session.js         boucle à pas fixe, joueurs locaux, commandes, changement de carte
+src/net/                    co-op en ligne : Net (PeerJS, latence simulée), HostLink (hôte),
+                            RemoteSession (invité), config (STUN/TURN, rythmes)
 src/input/InputManager.js   clavier (un seul jeu de listeners) + manettes par polling
 src/render/                 rendu Phaser, en lecture seule sur la simulation
   art/                      tous les graphismes générés par code (tuiles, sprites, police, icônes)
@@ -133,6 +178,5 @@ tests/                      tests de simulation dans le navigateur : http://loca
 
 ## Prochaines étapes
 
-- **J5** : co-op en ligne à 3 (PeerJS, code de salle, latence simulée).
 - **J6** : premier donjon et boss.
-- **Plus tard** : musique et bruitages ; une boutique pour dépenser les écus ; amélioration des armes.
+- **Plus tard** : musique et bruitages ; une boutique pour dépenser les écus ; amélioration des armes ; prédiction des mouvements côté invité ; un serveur TURN si des amis n'arrivent pas à se connecter.

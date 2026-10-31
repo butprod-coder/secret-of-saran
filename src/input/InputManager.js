@@ -108,20 +108,24 @@ export class InputManager {
 
     const seen = new Set(['kb']);
     for (const gp of this.gamepads()) {
-      if (!gp || !gp.connected) continue;
+      // Sans stick, ce n'est pas une manette : certains casques (boutons d'appel) se déclarent ainsi.
+      if (!gp || !gp.connected || gp.axes.length < 2) continue;
       const id = 'pad' + gp.index;
       seen.add(id);
       let d = this.devices.get(id);
       // Une manette Bluetooth qui se reconnecte peut reprendre le même index sous un autre modèle.
       if (d && d.raw !== gp.id) { this.padEvents.push({ type: 'disconnect', id, name: d.name }); d = null; }
+      const raw = readPad(gp);
       if (!d) {
         d = new Device(id);
         d.raw = gp.id;
         d.name = padName(gp.id);
+        // Un bouton déjà enfoncé à la connexion (ou bloqué) ne compte pas comme un appui.
+        for (const a of ACTIONS) d.held[a] = !!raw[a];
         this.devices.set(id, d);
         this.padEvents.push({ type: 'connect', id, name: d.name });
       }
-      d.commit(readPad(gp));
+      d.commit(raw);
     }
     for (const [id, d] of [...this.devices]) {
       if (seen.has(id)) continue;

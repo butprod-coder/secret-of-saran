@@ -3,6 +3,10 @@
 import { DAY_TICKS, GAME_H, GAME_W } from '../../config.js';
 import { input } from '../../input/InputManager.js';
 import { Session } from '../../game/Session.js';
+import { net, netError } from '../../net/Net.js';
+import { HostLink } from '../../net/HostLink.js';
+import { RemoteSession } from '../../net/RemoteSession.js';
+import { BackgroundTicker } from '../../net/BackgroundTicker.js';
 import { HEROES } from '../../sim/data/heroes.js';
 import { WEAPONS } from '../../sim/data/weapons.js';
 import { lootName } from '../../sim/data/items.js';
@@ -30,14 +34,25 @@ function skyTint(hour) {
 export class WorldScene extends Phaser.Scene {
   constructor() { super('World'); }
 
-  // data : { seed, intro } pour une nouvelle partie, { save } pour reprendre une sauvegarde.
+  // data : { seed, intro } pour une nouvelle partie, { save } pour reprendre une sauvegarde,
+  // plus { host: true } pour ouvrir une salle en ligne, ou { guest: { selfId, snap } } pour un invité.
+  // { players } : joueurs à garder quand la scène est relancée (chargement, game over).
   create(data) {
-    this.session = new Session({ loadMap: (id) => this.cache.tilemap.get(id).data, seed: data.seed ?? 1, save: data.save ?? null });
-    this.session.restorePlayers(data.players);
+    const loadMap = (id) => this.cache.tilemap.get(id).data;
+    this.link = null;
+    if (data.guest) {
+      this.session = new RemoteSession({ loadMap, ...data.guest });
+      this.session.onReset = () => this.scene.restart({ guest: { selfId: this.session.selfId, snap: this.session.lastSnap } });
+    } else {
+      this.session = new Session({ loadMap, seed: data.seed ?? 1, save: data.save ?? null });
+      this.session.restorePlayers(data.players);
+      if (data.host || net.role === 'host') this.startHosting(data);
+    }
     window.__session = this.session;
     this.views = new Map();
     this.renderPos = new Map();
     this.warping = false;
+    this.leaving = false;
     this.night = this.add.rectangle(0, 0, GAME_W, GAME_H, 0xffffff).setOrigin(0).setScrollFactor(0).setDepth(200000);
     this.night.setBlendMode(Phaser.BlendModes.MULTIPLY);
     this.buildMap();
@@ -49,6 +64,27 @@ export class WorldScene extends Phaser.Scene {
   }
 
   get ui() { return this.scene.get('UI'); }
+
+  // Ouvre la salle (ou garde celle déjà ouverte si la scène est relancée).
+  startHosting(data) {
+    this.link = new HostLink(this.session, data.save?.coop?.guests ?? {});
+    // Onglet caché : Phaser s'arrête, mais la partie doit continuer pour les invités.
+    this.ticker = new BackgroundTicker((now, dt) => this.update(now, dt));
+    this.events.once('shutdown', () => { this.ticker?.destroy(); this.ticker = null; });
+    if (net.role === 'host') { this.link.announceReset(); return; }
+    net.host(data.save?.coop?.code).then(
+      (code) => this.session.notices.push(`Salle ouverte : code ${code}`),
+      (e) => { this.link = null; net.close(); this.ui?.toast(netError(e), 0xff8070); },
+    );
+  }
+
+  // Retour au titre (invité qui perd l'hôte, ou fin de partie en ligne).
+  leaveToTitle(message) {
+    if (this.leaving) return;
+    this.leaving = true;
+    if (this.session.isGuest) this.session.leave();
+    this.scene.start('Title', { message });
+  }
 
   // (Re)crée les calques de la carte courante et oublie les vues de l'ancienne.
   buildMap() {
@@ -73,31 +109,48 @@ export class WorldScene extends Phaser.Scene {
     const ui = this.ui;
     this.session.updatePlayers(input);
     const blocked = ui?.ready ? ui.handleInput(input) : new Set();
-    this.session.paused = this.warping || (ui?.ready ? ui.isPausing() : false);
+    // Avec des invités connectés, les menus d'un joueur ne figent pas le monde des autres.
+    const online = this.link && this.session.remotePlayers.length > 0;
+    this.session.paused = this.warping || (!online && ui?.ready ? ui.isPausing() : false);
     this.session.update(delta, input, blocked);
+    this.link?.update();
+    if (this.session.mapChanged) { // invité : l'hôte a changé de carte
+      this.session.mapChanged = false;
+      this.buildMap();
+      ui?.banner(this.session.map.name);
+    }
     this.renderWorld();
     this.handleEvents(this.session.drainEvents());
     if (this.session.pendingWarp && !this.warping) this.warp(this.session.pendingWarp);
+    if (this.session.lost) this.leaveToTitle(this.session.lost);
   }
 
   // Fondu au noir, changement de carte, sauvegarde automatique, fondu retour.
   warp({ map, entry }) {
     this.warping = true;
     const cam = this.cameras.main;
-    cam.fadeOut(220, 8, 4, 16);
-    cam.once('camerafadeoutcomplete', () => {
+    const go = () => {
       this.session.changeMap(map, entry);
       this.buildMap();
       this.renderWorld();
       this.ui?.banner(this.session.map.name);
       this.autosave();
-      cam.fadeIn(260, 8, 4, 16);
       this.warping = false;
-    });
+    };
+    // Onglet caché (hôte qui a réduit sa fenêtre) : pas d'animation, elle ne finirait jamais.
+    if (document.hidden) { go(); return; }
+    cam.fadeOut(220, 8, 4, 16);
+    cam.once('camerafadeoutcomplete', () => { go(); cam.fadeIn(260, 8, 4, 16); });
+  }
+
+  // En ligne, la sauvegarde retient aussi le code de salle et le héros de chaque invité.
+  currentSave() {
+    const coop = this.link && net.code ? { code: net.code, guests: this.link.reservations() } : null;
+    return makeSave(this.session.world, this.session.map.name, coop);
   }
 
   async saveTo(slot) {
-    const save = makeSave(this.session.world, this.session.map.name);
+    const save = this.currentSave();
     const durable = await saves.write(slot, save);
     return { save, durable };
   }
@@ -138,7 +191,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     // Caméra : centrée sur les héros joueurs, un peu au-dessus à cause du HUD.
-    const humans = this.session.players.map((p) => this.renderPos.get(p.hero)).filter(Boolean);
+    const humans = this.session.players.filter((p) => !p.remote).map((p) => this.renderPos.get(p.hero)).filter(Boolean);
     if (humans.length) {
       const cx = humans.reduce((t, p) => t + p.x, 0) / humans.length;
       const cy = humans.reduce((t, p) => t + p.y, 0) / humans.length;

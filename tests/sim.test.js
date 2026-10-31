@@ -3,6 +3,10 @@ import { MapData } from '../src/sim/MapData.js';
 import { World } from '../src/sim/World.js';
 import { BTN } from '../src/sim/input.js';
 import { SAVE_VERSION, SaveError, makeSave, migrate } from '../src/save/format.js';
+import { Session } from '../src/game/Session.js';
+import { net } from '../src/net/Net.js';
+import { HostLink } from '../src/net/HostLink.js';
+import { RemoteSession } from '../src/net/RemoteSession.js';
 
 const out = document.getElementById('out');
 const results = [];
@@ -184,6 +188,103 @@ test('les sauvegardes invalides ou trop récentes sont refusées', () => {
   refuse({ ...good, game: { ...good.game, heroes: { bob: { lv: 1 } } } }, 'héros inconnu accepté');
   assert(migrate(good).game.gold === good.game.gold, 'sauvegarde valide refusée');
 });
+
+// --- Jalon 5 : protocole hôte / invité, sans réseau (messages capturés) ---------
+{
+  const maps = { prairie: mapJson, clairiere: await (await fetch('../assets/maps/clairiere.tmj')).json() };
+  const loadMap = (id) => maps[id];
+  const sent = [];
+  // Remplace l'envoi réseau : on garde les messages, passés par JSON comme sur le fil.
+  const wire = (m) => JSON.parse(JSON.stringify(m));
+  Object.assign(net, {
+    code: 'TEST',
+    conns: new Map([['peerA', {}]]),
+    sendTo: (to, m) => sent.push({ to, m: wire(m) }),
+    broadcast: (m) => sent.push({ to: '*', m: wire(m) }),
+    kick: () => {},
+    sendToHost: (m) => sent.push({ to: 'host', m: wire(m) }),
+  });
+  const last = (t, to) => [...sent].reverse().find((x) => x.m.t === t && (!to || x.to === to))?.m;
+
+  test("l'hôte accueille un invité, applique ses entrées et lui envoie l'état", () => {
+    const s = new Session({ loadMap, seed: 4 });
+    const link = new HostLink(s);
+    link.onGuestMessage('peerA', { t: 'hello', token: 'tokA' });
+    const p = s.players.find((q) => q.remote === 'peerA');
+    assert(p && p.hero === 'karonux', 'invité non placé sur Karonux');
+    assert(last('welcome', 'peerA')?.id === p.id, 'pas de welcome');
+    const kar = s.world.get('karonux');
+    const x0 = kar.x;
+    link.onGuestMessage('peerA', { t: 'in', mx: -1, my: 0, b: 0 });
+    for (let i = 0; i < 30; i++) s.update(1000 / 60, { merged: () => ({ held: {}, pressed: {}, repeat: {}, mx: 0, my: 0 }) });
+    assert(kar.x < x0 - 10, "Karonux n'a pas bougé : " + (kar.x - x0));
+    link.lastSent = 0;
+    link.update();
+    const snap = last('snap', '*');
+    assert(snap && snap.roster.some((r) => r.id === p.id && r.hero === 'karonux'), 'instantané incomplet');
+    assert(snap.s.ents.find((e) => e.id === 'karonux').ai === null, "la mémoire de l'IA devrait être retirée");
+  });
+
+  test("l'hôte refuse les commandes faites au nom d'un autre héros", () => {
+    const s = new Session({ loadMap, seed: 4 });
+    const link = new HostLink(s);
+    link.onGuestMessage('peerA', { t: 'hello', token: 'tokB' });
+    const gus = s.world.get('gus');
+    gus.hp = 10;
+    link.onGuestMessage('peerA', { t: 'cmd', c: { type: 'item', actor: 'gus', item: 'chocolatine', target: 'gus' } });
+    link.onGuestMessage('peerA', { t: 'cmd', c: { type: 'hack', actor: 'karonux' } });
+    assert(s.commands.length === 0, 'commande acceptée');
+    link.onGuestMessage('peerA', { t: 'cmd', c: { type: 'item', actor: 'karonux', item: 'chocolatine', target: 'gus' } });
+    assert(s.commands.length === 1, 'commande légitime refusée');
+  });
+
+  test('un invité coupé repasse sous IA puis retrouve son héros avec le même jeton', () => {
+    const s = new Session({ loadMap, seed: 4 });
+    const link = new HostLink(s);
+    link.onGuestMessage('peerA', { t: 'hello', token: 'tokC' });
+    const hero = s.players[1].hero;
+    link.onGuestLeave('peerA');
+    assert(s.world.get(hero).controller === 'ai' && s.players[1].lostSince != null, "pas repassé sous IA");
+    link.onGuestMessage('peerB', { t: 'hello', token: 'tokC' });
+    assert(s.players.length === 2 && s.players[1].remote === 'peerB' && s.players[1].hero === hero, 'héros non rendu');
+    assert(s.world.get(hero).controller === 'p1', 'contrôle non rendu');
+  });
+
+  test("une sauvegarde co-op rend son héros à l'invité, et refuse un 4e joueur", () => {
+    const s = new Session({ loadMap, seed: 4 });
+    const link = new HostLink(s, { tokD: 'lorenzo' });
+    link.onGuestMessage('peerA', { t: 'hello', token: 'tokD' });
+    assert(s.players[1].hero === 'lorenzo', 'héros réservé ignoré : ' + s.players[1].hero);
+    link.onGuestMessage('peerB', { t: 'hello', token: 'tokE' });
+    link.onGuestMessage('peerC', { t: 'hello', token: 'tokF' });
+    assert(s.players.length === 3 && last('refused', 'peerC'), '4e joueur accepté');
+    const save = migrate(JSON.stringify(makeSave(s.world, 'x', { code: 'ABCD', guests: link.reservations() })));
+    assert(save.coop.code === 'ABCD' && save.coop.guests.tokD === 'lorenzo', 'infos co-op perdues');
+  });
+
+  test("l'invité affiche l'état reçu, suit son héros et envoie ses entrées", () => {
+    const s = new Session({ loadMap, seed: 4 });
+    const link = new HostLink(s);
+    link.onGuestMessage('peerA', { t: 'hello', token: 'tokG' });
+    const welcome = last('welcome', 'peerA');
+    const r = new RemoteSession({ loadMap, selfId: welcome.id, snap: last('snap', 'peerA') });
+    assert(r.players[0].hero === 'karonux' && r.map.id === 'prairie', 'invité mal initialisé');
+    assert(r.playerOf('gus')?.slot === 0, "le HUD ne sait pas que Gus est J1");
+    const fakeInput = { merged: () => ({ held: { attack: false }, pressed: {}, repeat: {}, mx: 1, my: 0 }) };
+    r.update(16, fakeInput);
+    const inp = last('in', 'host');
+    assert(inp && inp.mx === 1, "entrée non envoyée");
+    // Changement de carte côté hôte : l'invité doit reconstruire sa carte.
+    s.changeMap('clairiere', 'ouest');
+    link.lastSent = 0;
+    link.update();
+    r.onHostMessage(last('snap', '*'));
+    assert(r.map.id === 'clairiere' && r.mapChanged, "changement de carte non suivi");
+    r.onHostMessage({ t: 'pong', ts: performance.now() - 42 });
+    assert(r.ping >= 42, 'ping non mesuré');
+  });
+  net.reset();
+}
 
 const failed = results.filter((r) => !r[1]).length;
 out.innerHTML = results.map(([n, ok, msg]) => `<div class="${ok ? 'ok' : 'ko'}">${ok ? 'OK ' : 'ÉCHEC '} ${n}${msg ? ' : ' + msg : ''}</div>`).join('')

@@ -8,6 +8,7 @@ import { bar, drawWindow, setText, text } from '../ui/widgets.js';
 import { RingMenu } from '../ui/RingMenu.js';
 import { Dialogue } from '../ui/Dialogue.js';
 import { saves } from '../../save/SaveStore.js';
+import { net } from '../../net/Net.js';
 
 const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 const PANEL_W = 125;
@@ -49,6 +50,7 @@ export class UIScene extends Phaser.Scene {
     });
     this.goldText = text(this, 8, 5, '', { tint: 0xffe080 });
     this.clockText = text(this, GAME_W - 7, 5, '', { origin: 1 });
+    this.netText = text(this, GAME_W / 2, 5, '', { tint: 0xa8e0a8, origin: 0.5 });
 
     this.dim = this.add.rectangle(0, 0, GAME_W, GAME_H, 0x080410, 0.35).setOrigin(0).setDepth(5).setVisible(false);
     this.toastG = this.add.graphics().setDepth(20);
@@ -78,6 +80,7 @@ export class UIScene extends Phaser.Scene {
     const all = new Set(players);
     if (this.gameOver) {
       const m = input.all();
+      if (this.session.isGuest) return all; // l'hôte décide de la reprise
       if ((m.pressed.attack || m.pressed.start) && !this.restarting) {
         this.restarting = true;
         saves.latest().then((save) => this.world.scene.restart(save ? { save, players: this.session.playersSnapshot() } : { seed: (Date.now() & 0x7fffffff) | 1, intro: false }));
@@ -89,6 +92,7 @@ export class UIScene extends Phaser.Scene {
     const blocked = new Set();
     const w = this.session.world;
     for (const p of players) {
+      if (p.remote) continue; // les invités ont leurs menus chez eux
       const m = input.merged([...p.devices]);
       const ring = this.ringFor(p);
       const hero = w.get(p.hero);
@@ -132,7 +136,8 @@ export class UIScene extends Phaser.Scene {
     this.add.rectangle(0, 0, GAME_W, GAME_H, 0x080410, 0.7).setOrigin(0).setDepth(40);
     text(this, GAME_W / 2, 84, "Toute l'équipe est K.O.", { tint: 0xff8070, outlined: true, origin: 0.5 }).setDepth(41).setScale(2);
     text(this, GAME_W / 2, 112, 'Même les Lapinfous ont un peu honte pour vous.', { outlined: true, origin: 0.5 }).setDepth(41);
-    text(this, GAME_W / 2, 132, 'Entrée / J / A : reprendre la dernière sauvegarde', { tint: 0xf2c244, outlined: true, origin: 0.5 }).setDepth(41);
+    const hint = this.session.isGuest ? "En attente de l'hôte..." : 'Entrée / J / A : reprendre la dernière sauvegarde';
+    text(this, GAME_W / 2, 132, hint, { tint: 0xf2c244, outlined: true, origin: 0.5 }).setDepth(41);
   }
 
   update(time, delta) {
@@ -194,5 +199,20 @@ export class UIScene extends Phaser.Scene {
     const cw = measure(clock) + 13;
     drawWindow(g, GAME_W - cw - 2, 2, cw, 14, 0.85);
     setText(this.clockText, clock);
+
+    // Partie en ligne : code de salle, et nombre d'invités (hôte) ou latence (invité).
+    let netStr = '';
+    if (net.role === 'host' && net.code) {
+      const n = this.session.remotePlayers.filter((p) => p.lostSince == null).length;
+      netStr = `Salle ${net.code} · ${n} invité${n > 1 ? 's' : ''}`;
+    } else if (net.role === 'guest') {
+      netStr = `Salle ${net.code} · ${this.session.ping ?? '...'} ms`;
+    }
+    this.netText.setVisible(!!netStr && this.toasts.length === 0);
+    if (netStr && !this.toasts.length) {
+      const nw = measure(netStr) + 13;
+      drawWindow(g, Math.round((GAME_W - nw) / 2), 2, nw, 14, 0.85);
+      setText(this.netText, netStr);
+    }
   }
 }

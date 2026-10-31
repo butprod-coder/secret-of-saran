@@ -9,7 +9,7 @@ import { drawWindow, setText, text } from './widgets.js';
 import { measure } from '../art/font.js';
 import { ListWindow } from './ListWindow.js';
 import { StatusWindow } from './StatusWindow.js';
-import { SaveError, makeSave } from '../../save/format.js';
+import { SaveError } from '../../save/format.js';
 import { SLOT_LABELS, exportFile, pickFile, readFile, saves } from '../../save/SaveStore.js';
 
 const RINGS = ['Objets', 'Magie', 'Équipement', 'Tactique', 'Système'];
@@ -23,6 +23,7 @@ const SYSTEM = [
   { action: 'import', icon: 'importer', label: 'Importer', detail: 'Ouvrir un .json (clavier, ou glisser sur le titre)' },
   { action: 'title', icon: 'titre', label: 'Écran titre', detail: 'Quitter la partie' },
 ];
+const HOST_ONLY = ['save', 'load', 'import'];
 
 // Résumé d'une sauvegarde pour les listes : « Prairie de Saran  Nv 4  0h12 ».
 export function describeSave(save) {
@@ -111,7 +112,13 @@ export class RingMenu {
         detail: h.controller === 'ai' ? 'Valider pour changer de tactique' : '(contrôlé par un joueur)',
       }));
     }
-    return SYSTEM.map((s) => ({ kind: 'system', ...s }));
+    // Invité en ligne : seul l'hôte sauvegarde et charge ; l'export reste possible (pour devenir hôte).
+    const guest = this.session.isGuest;
+    return SYSTEM.map((s) => ({
+      kind: 'system', ...s,
+      ...(guest && HOST_ONLY.includes(s.action) ? { disabled: true, detail: "Réservé à l'hôte de la partie" } : {}),
+      ...(guest && s.action === 'title' ? { label: 'Quitter la partie' } : {}),
+    }));
   }
 
   buildIcons(sel) {
@@ -197,7 +204,8 @@ export class RingMenu {
       return;
     }
     if (action === 'export') {
-      exportFile(makeSave(scene.session.world, scene.session.map.name));
+      // Un invité peut exporter la partie commune : il pourra la reprendre en tant qu'hôte.
+      exportFile(scene.currentSave());
       this.ui.toast('Partie exportée (.json)', 0xa8c8ff);
       return;
     }
@@ -218,7 +226,7 @@ export class RingMenu {
         title: 'Quitter ? La progression non sauvegardée sera perdue.',
         width: 260,
         entries: [{ label: 'Non, je reste', value: false }, { label: "Oui, retour à l'écran titre", value: true }],
-        onPick: (yes) => { if (yes) scene.scene.start('Title'); },
+        onPick: (yes) => { if (yes) scene.leaveToTitle(); },
       });
     }
   }

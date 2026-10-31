@@ -1,14 +1,23 @@
-// Une partie locale : possède le monde, fait avancer la simulation à pas fixe et
-// relie les joueurs locaux (clavier, manettes) à leurs héros. En ligne, l'hôte
-// utilisera la même classe et recevra en plus les entrées des clients.
+// Une partie : possède le monde, fait avancer la simulation à pas fixe et relie les
+// joueurs à leurs héros. Joueurs locaux (clavier, manettes) ou distants : en ligne,
+// l'hôte fait tourner cette classe et HostLink y branche les invités (`p.remote`).
 import { STEP_MS } from '../config.js';
-import { BTN } from '../sim/input.js';
+import { BTN, NO_INPUT } from '../sim/input.js';
 import { MapData } from '../sim/MapData.js';
 import { World } from '../sim/World.js';
 import { HEROES, HERO_ORDER } from '../sim/data/heroes.js';
 
-const MAX_PLAYERS = 3;
+export const MAX_PLAYERS = 3;
 const LOST_GRACE_MS = 30000;
+
+// Panneau ou coffre devant un héros, à portée de main ? (partagé avec RemoteSession)
+export function inFront(hero, list) {
+  const fx = hero.x + hero.fx * 12;
+  const fy = hero.y - 4 + hero.fy * 12;
+  return list.find((s) => Math.hypot(s.x - fx, s.y - fy) < 13) ?? null;
+}
+
+let playerSeq = 0;
 
 export class Session {
   // loadMap(id) renvoie le JSON Tiled d'une carte. `save` (déjà migrée) reprend une partie.
@@ -56,18 +65,22 @@ export class Session {
     });
   }
 
-  addPlayer(devices, heroId) {
-    const p = { slot: this.players.length, devices: new Set(devices), hero: heroId, suppress: 0 };
+  // `extra` : champs des joueurs distants (remote, token) ou restaurés (id).
+  addPlayer(devices, heroId, extra = {}) {
+    const p = { id: 'P' + ++playerSeq, slot: this.players.length, devices: new Set(devices), hero: heroId, suppress: 0, ...extra };
     this.players.push(p);
     this.world.setController(heroId, 'p' + p.slot);
     return p;
   }
 
   playerOf(heroId) { return this.players.find((p) => p.hero === heroId) ?? null; }
+  get remotePlayers() { return this.players.filter((p) => p.remote); }
 
-  // Joueurs locaux à conserver quand on recharge une partie (scène relancée).
+  // Joueurs à conserver quand on recharge une partie (scène relancée), invités compris.
   playersSnapshot() {
-    return this.players.filter((p) => p.lostSince == null).map((p) => ({ devices: [...p.devices], hero: p.hero, padName: p.padName }));
+    return this.players.filter((p) => p.lostSince == null).map((p) => ({
+      id: p.id, devices: [...p.devices], hero: p.hero, padName: p.padName, remote: p.remote, token: p.token,
+    }));
   }
 
   restorePlayers(list = []) {
@@ -82,7 +95,9 @@ export class Session {
           this.world.setController(pl.hero, 'p0');
         }
       } else if (!this.playerOf(pl.hero)) {
-        this.addPlayer(pl.devices, pl.hero).padName = pl.padName;
+        const extra = { id: pl.id, padName: pl.padName };
+        if (pl.remote) Object.assign(extra, { remote: pl.remote, token: pl.token, netInput: NO_INPUT, lastSeen: performance.now() });
+        this.addPlayer(pl.devices, pl.hero, extra);
       }
     });
     for (const p of this.players) p.suppress = BTN.ATTACK;
@@ -185,6 +200,8 @@ export class Session {
     this.acc += Math.min(dtMs, 100);
     const inputs = {};
     for (const p of this.players) {
+      // Invité : dernières entrées reçues (il gère lui-même menus et anti-rebond).
+      if (p.remote) { if (p.lostSince == null) inputs[p.hero] = p.netInput ?? NO_INPUT; continue; }
       const m = input.merged([...p.devices]);
       let buttons = (m.held.attack ? BTN.ATTACK : 0) | (m.held.run ? BTN.RUN : 0);
       // Après un menu ou une bascule, on ignore l'attaque tant qu'elle n'est pas relâchée.
@@ -196,6 +213,7 @@ export class Session {
       this.world.step(inputs, this.commands);
       this.commands = [];
       this.events.push(...this.world.s.events);
+      this.onStep?.(this.world.s.events); // HostLink : relaie les événements aux invités
       this.acc -= STEP_MS;
     }
     if (this.pendingWarp) this.acc = 0;
@@ -207,12 +225,6 @@ export class Session {
     return ev;
   }
 
-  // Panneau ou coffre fermé devant le héros, à portée de main ?
-  inFront(hero, list) {
-    const fx = hero.x + hero.fx * 12;
-    const fy = hero.y - 4 + hero.fy * 12;
-    return list.find((s) => Math.hypot(s.x - fx, s.y - fy) < 13) ?? null;
-  }
-  signInFront(hero) { return this.inFront(hero, this.map.signs); }
-  chestInFront(hero) { return this.inFront(hero, this.map.chests.filter((c) => !this.world.s.flags[c.key])); }
+  signInFront(hero) { return inFront(hero, this.map.signs); }
+  chestInFront(hero) { return inFront(hero, this.map.chests.filter((c) => !this.world.s.flags[c.key])); }
 }
